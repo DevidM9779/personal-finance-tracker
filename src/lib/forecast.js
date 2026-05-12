@@ -98,7 +98,7 @@ export function buildForecast({ accounts = [], recurring = [], profile = {} }, n
   const creditDebt = sumCreditDebt(accounts);
   const anticipatedDebt = sumStatementBalances(accounts);
 
-  const debtPaymentDay = Number(profile.preferredDebtPaymentDayOfMonth) || null;
+  const debtPaymentDay = Number(profile?.preferredDebtPaymentDayOfMonth) || null;
   const nextDebtPaymentDate = debtPaymentDay
     ? nextDateOnDay(debtPaymentDay, now)
     : null;
