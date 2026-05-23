@@ -27,7 +27,7 @@ import {
   expensesByCategoryThisMonth,
 } from "../lib/forecast";
 
-export default function Dashboard({ profile, accounts, transactions, recurring }) {
+export default function Dashboard({ profile, accounts, transactions, recurring, subscriptions }) {
   const forecast = useMemo(
     () => buildForecast({ accounts, recurring, profile }),
     [accounts, recurring, profile]
@@ -135,10 +135,10 @@ export default function Dashboard({ profile, accounts, transactions, recurring }
                     hint="Sum across active cards"
                   />
                   <Stat
-                    label="Recurring Until Then"
-                    value={formatCurrency(forecast.upcomingRecurring)}
+                    label="Bills Until Then"
+                    value={formatCurrency(forecast.upcomingRecurring + forecast.upcomingSubscriptions)}
                     tone="negative"
-                    hint="Bills before payment date"
+                    hint="Recurring + subscriptions"
                   />
                   <Stat
                     label="Cash Needed"
@@ -157,8 +157,8 @@ export default function Dashboard({ profile, accounts, transactions, recurring }
                       </p>
                       <p className="mt-1 text-xs text-rose-200/80">
                         Consider withdrawing from your Emergency Fund or another
-                        asset account to cover statement balances and upcoming
-                        recurring expenses on{" "}
+                        asset account to cover statement balances, recurring expenses,
+                        and subscriptions on{" "}
                         {formatDate(forecast.nextDebtPaymentDate)}.
                       </p>
                     </div>
@@ -167,8 +167,8 @@ export default function Dashboard({ profile, accounts, transactions, recurring }
                   <div className="flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-emerald-200">
                     <Wallet size={18} className="mt-0.5 shrink-0" />
                     <p className="text-sm">
-                      You have enough liquid cash to cover statement balances and
-                      recurring expenses through {formatDate(forecast.nextDebtPaymentDate)}.
+                      You have enough liquid cash to cover statement balances,
+                      recurring expenses, and subscriptions through {formatDate(forecast.nextDebtPaymentDate)}.
                     </p>
                   </div>
                 )}

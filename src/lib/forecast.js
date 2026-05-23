@@ -59,6 +59,7 @@ export function netWorth(accounts) {
 /**
  * Compute the upcoming recurring expense burden that will hit the user's bank
  * accounts between today and the next debt payment date (inclusive).
+ * This handles both monthly bills and longer-term subscriptions.
  */
 export function upcomingRecurringTotal(recurring, debtPaymentDate, from = new Date()) {
   if (!debtPaymentDate) return 0;
@@ -69,21 +70,45 @@ export function upcomingRecurringTotal(recurring, debtPaymentDate, from = new Da
 
   let total = 0;
   for (const r of recurring || []) {
-    const day = Number(r.billingDayOfMonth);
-    if (!Number.isFinite(day) || day < 1 || day > 31) continue;
-    // Walk month-by-month from `start` to `end` and see whether each
-    // anchored billing date lands inside the window.
-    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
-    while (cursor <= end) {
-      const billingDate = new Date(
-        cursor.getFullYear(),
-        cursor.getMonth(),
-        clampDay(day, cursor.getFullYear(), cursor.getMonth())
-      );
-      if (billingDate >= start && billingDate <= end) {
-        total += Number(r.amount || 0);
+    const interval = r.interval || "monthly";
+
+    if (interval === "monthly") {
+      const day = Number(r.billingDayOfMonth);
+      if (!Number.isFinite(day) || day < 1 || day > 31) continue;
+      
+      const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+      while (cursor <= end) {
+        const billingDate = new Date(
+          cursor.getFullYear(),
+          cursor.getMonth(),
+          clampDay(day, cursor.getFullYear(), cursor.getMonth())
+        );
+        if (billingDate >= start && billingDate <= end) {
+          total += Number(r.amount || 0);
+        }
+        cursor.setMonth(cursor.getMonth() + 1);
       }
-      cursor.setMonth(cursor.getMonth() + 1);
+    } else {
+      if (!r.startDate) continue;
+      const startDate = new Date(r.startDate);
+      
+      let monthsToAdd = 1;
+      if (interval === "quarterly") monthsToAdd = 3;
+      else if (interval === "biannually") monthsToAdd = 6;
+      else if (interval === "yearly") monthsToAdd = 12;
+      else if (interval === "custom") monthsToAdd = Number(r.customMonths) || 1;
+
+      let nextRenewal = new Date(startDate);
+      // Fast-forward past renewals that already happened before 'start'
+      while (nextRenewal < start) {
+        nextRenewal.setMonth(nextRenewal.getMonth() + monthsToAdd);
+      }
+
+      // Accumulate costs for all renewals that fall within the current forecast window
+      while (nextRenewal >= start && nextRenewal <= end) {
+        total += Number(r.amount || 0);
+        nextRenewal.setMonth(nextRenewal.getMonth() + monthsToAdd);
+      }
     }
   }
   return total;
@@ -103,6 +128,8 @@ export function buildForecast({ accounts = [], recurring = [], profile = {} }, n
     ? nextDateOnDay(debtPaymentDay, now)
     : null;
 
+  // Because recurring handles both monthly and long-term intervals now,
+  // we only need this one call to get our total anticipated burden.
   const upcomingRecurring = upcomingRecurringTotal(recurring, nextDebtPaymentDate, now);
   const totalCashNeeded = anticipatedDebt + upcomingRecurring;
   const cashShortfall = totalCashNeeded - liquidCash;

@@ -35,7 +35,7 @@ function Root() {
 }
 
 function AuthenticatedApp({ user }) {
-  const { profile, accounts, transactions, recurring, loading } = useUserData(
+  const { profile, accounts, transactions, recurring, subscriptions, loading } = useUserData(
     user.uid
   );
 

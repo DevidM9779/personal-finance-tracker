@@ -37,7 +37,11 @@ export async function ensureUserProfile(user) {
 }
 
 export async function updateProfile(uid, patch) {
-  await updateDoc(userDoc(uid), patch);
+  // Replace your existing db reference if it's named differently
+  const userRef = doc(db, "users", uid); 
+  
+  // Use setDoc with { merge: true } instead of updateDoc
+  return setDoc(userRef, patch, { merge: true });
 }
 
 export async function createAccount(uid, data) {
