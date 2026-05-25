@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Trash2, Plus, Loader2, PencilLine, CreditCard } from "lucide-react";
+import { Trash2, Plus, Loader2, PencilLine, CreditCard, Filter, X } from "lucide-react";
 import {
   Badge,
   Button,
@@ -41,6 +41,9 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
   const run = useToastedAction();
   const [rows, setRows] = useState([EMPTY_ROW()]);
   const [submitting, setSubmitting] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [timeFilter, setTimeFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
 
   const bankAndCreditAccounts = useMemo(
     () =>
@@ -58,6 +61,39 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
     () => accounts.filter((a) => a.type === "creditCard" && a.isActive !== false),
     [accounts]
   );
+
+  const filteredTransactions = useMemo(() => {
+    let filtered = [...transactions];
+    
+    // Apply category filter
+    if (categoryFilter !== "all") {
+      filtered = filtered.filter(t => t.category === categoryFilter);
+    }
+    
+    // Apply type filter
+    if (typeFilter !== "all") {
+      filtered = filtered.filter(t => t.type === typeFilter);
+    }
+    
+    // Apply time filter
+    const now = new Date();
+    if (timeFilter !== "all") {
+      const startDate = new Date();
+      if (timeFilter === "week") {
+        startDate.setDate(now.getDate() - 7);
+      } else if (timeFilter === "month") {
+        startDate.setMonth(now.getMonth() - 1);
+      } else if (timeFilter === "quarter") {
+        startDate.setMonth(now.getMonth() - 3);
+      } else if (timeFilter === "year") {
+        startDate.setFullYear(now.getFullYear() - 1);
+      }
+      startDate.setHours(0, 0, 0, 0);
+      filtered = filtered.filter(t => new Date(t.date) >= startDate);
+    }
+    
+    return filtered;
+  }, [transactions, categoryFilter, timeFilter, typeFilter]);
 
   function updateRow(key, patch) {
     setRows((prev) =>
@@ -221,63 +257,124 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
       <Card>
         <CardHeader
           title="Recent entries"
-          subtitle={`${transactions.length} total`}
+          subtitle={`${filteredTransactions.length} shown${categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all" ? ` (filtered from ${transactions.length} total)` : ""}`}
         />
         <CardBody>
-          {transactions.length === 0 ? (
+          <div className="mb-4 flex flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Filter size={14} className="text-neutral-500" />
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 focus:border-emerald-500 focus:outline-none"
+              >
+                <option value="all">All categories</option>
+                {EXPENSE_CATEGORIES.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 focus:border-emerald-500 focus:outline-none"
+              >
+                <option value="all">All types</option>
+                {TRANSACTION_TYPES.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={timeFilter}
+                onChange={(e) => setTimeFilter(e.target.value)}
+                className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 focus:border-emerald-500 focus:outline-none"
+              >
+                <option value="all">All time</option>
+                <option value="week">Last week</option>
+                <option value="month">Last month</option>
+                <option value="quarter">Last 3 months</option>
+                <option value="year">Last year</option>
+              </select>
+            </div>
+            {(categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setCategoryFilter("all");
+                  setTimeFilter("all");
+                  setTypeFilter("all");
+                }}
+                className="h-7 text-xs"
+              >
+                <X size={12} />
+                Clear
+              </Button>
+            )}
+          </div>
+          {filteredTransactions.length === 0 ? (
             <Empty
               icon={PencilLine}
-              title="Nothing logged yet"
-              hint="Save your first transaction above."
+              title={categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all" ? "No matching entries" : "Nothing logged yet"}
+              hint={categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all" ? "Try adjusting your filters." : "Save your first transaction above."}
             />
           ) : (
-            <ul className="divide-y divide-neutral-900">
-              {transactions.slice(0, 25).map((t) => (
-                <li
-                  key={t.id}
-                  className="flex items-center justify-between gap-3 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm text-neutral-200">
-                      {t.note || categoryLabel(t.category, t.subCategory)}
-                    </p>
-                    <p className="text-[11px] text-neutral-500">
-                      {formatDate(t.date)} ·{" "}
-                      <span className="capitalize">
-                        {t.type === "assetContribution"
-                          ? "asset contribution"
-                          : t.type}
+            <div className="max-h-96 overflow-y-auto">
+              <ul className="divide-y divide-neutral-900">
+                {filteredTransactions.slice(0, 50).map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex items-center justify-between gap-3 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-neutral-200">
+                        {t.note || categoryLabel(t.category, t.subCategory)}
+                      </p>
+                      <p className="text-[11px] text-neutral-500">
+                        {formatDate(t.date)} ·{" "}
+                        <span className="capitalize">
+                          {t.type === "assetContribution"
+                            ? "asset contribution"
+                            : t.type}
+                        </span>
+                        {t.type === "expense" ? ` · ${categoryLabel(t.category, t.subCategory)}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`tabular text-sm font-medium ${
+                          t.type === "expense"
+                            ? "text-rose-300"
+                            : "text-emerald-300"
+                        }`}
+                      >
+                        {t.type === "expense" ? "−" : "+"}
+                        {formatCurrency(t.amount)}
                       </span>
-                      {t.type === "expense" ? ` · ${categoryLabel(t.category, t.subCategory)}` : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`tabular text-sm font-medium ${
-                        t.type === "expense"
-                          ? "text-rose-300"
-                          : "text-emerald-300"
-                      }`}
-                    >
-                      {t.type === "expense" ? "−" : "+"}
-                      {formatCurrency(t.amount)}
-                    </span>
-                    <button
-                      className="rounded-md p-1.5 text-neutral-500 transition hover:bg-neutral-900 hover:text-rose-300"
-                      onClick={() =>
-                        run(() => deleteTransaction(user.uid, t.id), {
-                          successMessage: "Transaction removed",
-                          errorMessage: "Could not delete",
-                        })
-                      }
-                      aria-label="Delete transaction"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                      <button
+                        className="rounded-md p-1.5 text-neutral-500 transition hover:bg-neutral-900 hover:text-rose-300"
+                        onClick={() =>
+                          run(() => deleteTransaction(user.uid, t.id), {
+                            successMessage: "Transaction removed",
+                            errorMessage: "Could not delete",
+                          })
+                        }
+                        aria-label="Delete transaction"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </CardBody>
       </Card>

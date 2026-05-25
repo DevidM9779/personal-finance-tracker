@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ResponsiveContainer,
@@ -8,6 +8,7 @@ import {
   YAxis,
   Tooltip,
   Cell,
+  CartesianGrid,
 } from "recharts";
 import {
   AlertTriangle,
@@ -28,19 +29,27 @@ import {
 } from "../lib/forecast";
 
 export default function Dashboard({ profile, accounts, transactions, recurring, subscriptions }) {
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  
   const forecast = useMemo(
-    () => buildForecast({ accounts, recurring, profile }),
-    [accounts, recurring, profile]
+    () => buildForecast({ accounts, recurring, subscriptions, profile }),
+    [accounts, recurring, subscriptions, profile]
   );
 
   const categoryData = useMemo(
     () =>
       expensesByCategoryThisMonth(transactions).map((row) => ({
+        category: row.category,
         label: categoryLabel(row.category),
         amount: Number(row.amount.toFixed(2)),
       })),
     [transactions]
   );
+
+  const filteredTransactions = useMemo(() => {
+    if (!selectedCategory) return transactions;
+    return transactions.filter(t => t.category === selectedCategory);
+  }, [transactions, selectedCategory]);
 
   const monthName = new Date().toLocaleString("en-US", { month: "long" });
 
@@ -241,7 +250,17 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
             ) : (
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={categoryData} margin={{ top: 8, right: 8, left: -16, bottom: 8 }}>
+                  <BarChart 
+                    data={categoryData} 
+                    margin={{ top: 8, right: 8, left: -16, bottom: 8 }}
+                    onClick={(data) => {
+                      if (data && data.activePayload && data.activePayload.length > 0) {
+                        setSelectedCategory(data.activePayload[0].payload.category);
+                      } else {
+                        setSelectedCategory(null);
+                      }
+                    }}
+                  >
                     <XAxis
                       dataKey="label"
                       stroke="#737373"
@@ -270,15 +289,48 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
                         color: "#e5e5e5",
                         fontSize: 12,
                       }}
-                      formatter={(value) => [formatCurrency(value), "Spent"]}
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length > 0) {
+                          const data = payload[0].payload;
+                          return (
+                            <div style={{ background: "#0a0a0a", border: "1px solid #262626", borderRadius: 8, padding: "8px 12px", color: "#e5e5e5", fontSize: 12 }}>
+                              <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{data.label}</div>
+                              <div>{formatCurrency(data.amount)} spent this month</div>
+                            </div>
+                          );
+                        }
+                        return null; 
+                      }}
+                      triggerArea="all"
                     />
-                    <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
-                      {categoryData.map((_, i) => (
-                        <Cell key={i} fill="#fb7185" fillOpacity={0.85} />
+                    <Bar 
+                      dataKey="amount" 
+                      radius={[6, 6, 0, 0]}
+                      cursor="pointer"
+                    >
+                      {categoryData.map((entry, i) => (
+                        <Cell 
+                          key={i} 
+                          fill={selectedCategory === entry.category ? "#315fff" : "#fb7185"} 
+                          fillOpacity={selectedCategory === entry.category ? 1 : 0.85}
+                        />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
+                {selectedCategory && (
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <span className="text-neutral-400">
+                      Filtering by: <span className="font-medium text-neutral-200">{categoryLabel(selectedCategory)}</span>
+                    </span>
+                    <button
+                      onClick={() => setSelectedCategory(null)}
+                      className="text-emerald-400 hover:text-emerald-300"
+                    >
+                      Clear filter
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </CardBody>
@@ -287,7 +339,11 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
         <Card>
           <CardHeader
             title="Recent transactions"
-            subtitle={`${transactions.length} total`}
+            subtitle={
+              selectedCategory 
+                ? `Filtered by ${categoryLabel(selectedCategory)} · ${filteredTransactions.length} shown`
+                : `${transactions.length} total`
+            }
             action={
               <Link to="/entry" className="text-xs text-neutral-400 hover:text-neutral-200">
                 View all
@@ -295,36 +351,38 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
             }
           />
           <CardBody>
-            {transactions.length === 0 ? (
+            {filteredTransactions.length === 0 ? (
               <Empty
                 icon={Receipt}
-                title="Nothing logged yet"
-                hint="Start by recording a few transactions."
+                title={selectedCategory ? `No ${categoryLabel(selectedCategory)} expenses` : "Nothing logged yet"}
+                hint={selectedCategory ? "Try selecting a different category." : "Start by recording a few transactions."}
               />
             ) : (
-              <ul className="divide-y divide-neutral-900">
-                {transactions.slice(0, 6).map((t) => (
-                  <li key={t.id} className="flex items-center justify-between gap-3 py-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-neutral-200">
-                        {t.note || categoryLabel(t.category, t.subCategory)}
-                      </p>
-                      <p className="text-[11px] text-neutral-500">
-                        {formatDate(t.date)} ·{" "}
-                        <span className="capitalize">{t.type === "assetContribution" ? "asset contribution" : t.type}</span>
-                      </p>
-                    </div>
-                    <span
-                      className={`tabular shrink-0 text-sm font-medium ${
-                        t.type === "expense" ? "text-rose-300" : "text-emerald-300"
-                      }`}
-                    >
-                      {t.type === "expense" ? "−" : "+"}
-                      {formatCurrency(t.amount)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="max-h-64 overflow-y-auto">
+                <ul className="divide-y divide-neutral-900">
+                  {filteredTransactions.slice(0, 6).map((t) => (
+                    <li key={t.id} className="flex items-center justify-between gap-3 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm text-neutral-200">
+                          {t.note || categoryLabel(t.category, t.subCategory)}
+                        </p>
+                        <p className="text-[11px] text-neutral-500">
+                          {formatDate(t.date)} ·{" "}
+                          <span className="capitalize">{t.type === "assetContribution" ? "asset contribution" : t.type}</span>
+                        </p>
+                      </div>
+                      <span
+                        className={`tabular shrink-0 text-sm font-medium ${
+                          t.type === "expense" ? "text-rose-300" : "text-emerald-300"
+                        }`}
+                      >
+                        {t.type === "expense" ? "−" : "+"}
+                        {formatCurrency(t.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </CardBody>
         </Card>
@@ -343,7 +401,7 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
           accounts={assetAccounts}
           emptyHint="Track your 401k, IRA, or Emergency Fund."
         />
-        <UpcomingRecurringCard recurring={recurring} debtPaymentDate={forecast.nextDebtPaymentDate} />
+        <UpcomingRecurringCard recurring={recurring} subscriptions={subscriptions} debtPaymentDate={forecast.nextDebtPaymentDate} />
       </section>
     </div>
   );
@@ -427,27 +485,100 @@ function BalancesCard({ icon: Icon, title, accounts, emptyHint }) {
   );
 }
 
-function UpcomingRecurringCard({ recurring, debtPaymentDate }) {
-  const sorted = useMemo(() => {
-    if (!recurring) return [];
-    return [...recurring].sort(
-      (a, b) => Number(a.billingDayOfMonth) - Number(b.billingDayOfMonth)
-    );
-  }, [recurring]);
-  const total = sorted.reduce((s, r) => s + Number(r.amount || 0), 0);
+function UpcomingRecurringCard({ recurring, subscriptions, debtPaymentDate }) {
+  // Calculate next renewal date for subscriptions
+  const calculateNextSubscriptionRenewal = (subscription) => {
+    if (!subscription.startDate) return null;
+    
+    const startDate = new Date(subscription.startDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let monthsToAdd = 1;
+    if (subscription.interval === "quarterly") monthsToAdd = 3;
+    else if (subscription.interval === "biannually") monthsToAdd = 6;
+    else if (subscription.interval === "yearly") monthsToAdd = 12;
+    else if (subscription.interval === "custom") monthsToAdd = Number(subscription.customMonths) || 1;
+    
+    let baseDate = subscription.lastBillingDate 
+      ? new Date(subscription.lastBillingDate)
+      : new Date(startDate);
+    
+    let nextRenewal = new Date(baseDate);
+    while (nextRenewal < today) {
+      nextRenewal.setMonth(nextRenewal.getMonth() + monthsToAdd);
+    }
+    
+    return nextRenewal;
+  };
+
+  // Get next billing date for monthly recurring expenses
+  const getNextRecurringDate = (dayOfMonth) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const day = Math.min(Math.max(1, Number(dayOfMonth) || 1), new Date(year, month + 1, 0).getDate());
+    const thisMonthCandidate = new Date(year, month, day);
+    if (thisMonthCandidate >= today) return thisMonthCandidate;
+    return new Date(year, month + 1, Math.min(day, new Date(year, month + 2, 0).getDate()));
+  };
+
+  const combinedItems = useMemo(() => {
+    const items = [];
+    
+    // Add monthly recurring expenses
+    (recurring || []).forEach(r => {
+      items.push({
+        ...r,
+        type: 'recurring',
+        nextDate: getNextRecurringDate(r.billingDayOfMonth),
+        displayAmount: r.amount,
+        monthlyAmount: r.amount
+      });
+    });
+    
+    // Add subscriptions
+    (subscriptions || []).forEach(s => {
+      const nextRenewal = calculateNextSubscriptionRenewal(s);
+      let monthlyAmount = Number(s.amount || 0);
+      if (s.interval === "quarterly") monthlyAmount /= 3;
+      else if (s.interval === "biannually") monthlyAmount /= 6;
+      else if (s.interval === "yearly") monthlyAmount /= 12;
+      else if (s.interval === "custom") monthlyAmount /= (Number(s.customMonths) || 1);
+      
+      items.push({
+        ...s,
+        type: 'subscription',
+        nextDate: nextRenewal,
+        displayAmount: s.amount,
+        monthlyAmount: monthlyAmount
+      });
+    });
+    
+    // Sort by next date
+    return items.sort((a, b) => {
+      if (!a.nextDate) return 1;
+      if (!b.nextDate) return -1;
+      return a.nextDate - b.nextDate;
+    });
+  }, [recurring, subscriptions]);
+
+  const totalMonthly = combinedItems.reduce((s, item) => s + (item.monthlyAmount || 0), 0);
+
   return (
     <Card>
       <CardHeader
-        title="Recurring expenses"
+        title="Recurring bills"
         subtitle={
           debtPaymentDate
             ? `Next debt payment ${formatDate(debtPaymentDate)}`
             : undefined
         }
-        action={<Badge tone="warning">{formatCurrency(total)} / mo</Badge>}
+        action={<Badge tone="warning">{formatCurrency(totalMonthly)} / mo avg</Badge>}
       />
       <CardBody>
-        {sorted.length === 0 ? (
+        {combinedItems.length === 0 ? (
           <Empty
             icon={CalendarClock}
             title="No recurring bills"
@@ -455,17 +586,29 @@ function UpcomingRecurringCard({ recurring, debtPaymentDate }) {
           />
         ) : (
           <ul className="divide-y divide-neutral-900">
-            {sorted.map((r) => (
-              <li key={r.id} className="flex items-center justify-between py-2.5">
+            {combinedItems.map((item) => (
+              <li key={item.id} className="flex items-center justify-between py-2.5">
                 <div>
-                  <p className="text-sm text-neutral-200">{r.name}</p>
+                  <p className="text-sm text-neutral-200">{item.name}</p>
                   <p className="text-[11px] text-neutral-500">
-                    Bills on the {ordinal(r.billingDayOfMonth)}
+                    {item.type === 'recurring' 
+                      ? `Bills on the ${ordinal(item.billingDayOfMonth)}`
+                      : item.nextDate 
+                        ? `Renews ${formatDate(item.nextDate)}`
+                        : 'No start date'
+                    }
                   </p>
                 </div>
-                <span className="tabular text-sm text-neutral-300">
-                  {formatCurrency(r.amount)}
-                </span>
+                <div className="text-right">
+                  <span className="tabular text-sm text-neutral-300">
+                    {formatCurrency(item.displayAmount)}
+                  </span>
+                  {item.type === 'subscription' && item.interval !== 'monthly' && (
+                    <p className="text-[10px] text-neutral-500">
+                      {item.interval === 'custom' ? `Every ${item.customMonths}mo` : item.interval}
+                    </p>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

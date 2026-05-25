@@ -50,3 +50,41 @@ export function ordinal(n) {
   const m = v % 100;
   return v + (s[(m - 20) % 10] || s[m] || s[0]);
 }
+
+/**
+ * Generates today's date as "YYYY-MM-DD" strictly in Eastern Time
+ */
+export function getTodayEST() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+/**
+ * Formats any date (String, JS Date, or Firestore Timestamp) strictly in EST
+ */
+export function formatDateEST(date) {
+  if (!date) return "N/A";
+  
+  let safeDate;
+  if (date?.toDate) {
+    // Handle Firestore Timestamps natively
+    safeDate = date.toDate();
+  } else if (typeof date === "string" && date.length === 10) {
+    // Prevent "YYYY-MM-DD" strings from shifting backward a day 
+    // by anchoring them to local midnight before formatting
+    safeDate = new Date(`${date}T00:00:00`);
+  } else {
+    safeDate = new Date(date);
+  }
+
+  return safeDate.toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
