@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useNetWorthHistory } from "../hooks/useNetWorthHistory";
+import NetWorthChart from "../components/NetWorthChart";
+import ExpensesOverTimeChart from "../components/ExpensesOverTimeChart";
 import {
   ResponsiveContainer,
   BarChart,
@@ -17,6 +20,7 @@ import {
   CalendarClock,
   CreditCard,
   PiggyBank,
+  Plus,
   Receipt,
   Wallet,
 } from "lucide-react";
@@ -27,13 +31,39 @@ import {
   buildForecast,
   expensesByCategoryThisMonth,
 } from "../lib/forecast";
+import { upsertNetWorthSnapshot } from "../lib/netWorthSnapshots";
+import { useToast } from "../components/toastHooks";
 
-export default function Dashboard({ profile, accounts, transactions, recurring, subscriptions }) {
+export default function Dashboard({ profile, accounts, transactions, recurring, user }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
-  
+  const { snapshots: netWorthSnapshots } = useNetWorthHistory(user?.uid, accounts);
+  const { toast } = useToast();
+  const [creatingSnapshot, setCreatingSnapshot] = useState(false);
+
+  const handleCreateSnapshot = async () => {
+    if (!user || creatingSnapshot) return;
+    setCreatingSnapshot(true);
+    try {
+      await upsertNetWorthSnapshot(user.uid, accounts);
+      toast({
+        title: "Snapshot created",
+        variant: "success",
+      });
+    } catch (err) {
+      console.error("Failed to create snapshot:", err);
+      toast({
+        title: "Failed to create snapshot",
+        description: err?.message || "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setCreatingSnapshot(false);
+    }
+  };
+
   const forecast = useMemo(
-    () => buildForecast({ accounts, recurring, subscriptions, profile }),
-    [accounts, recurring, subscriptions, profile]
+    () => buildForecast({ accounts, recurring, profile }),
+    [accounts, recurring, profile]
   );
 
   const categoryData = useMemo(
@@ -47,8 +77,11 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
   );
 
   const filteredTransactions = useMemo(() => {
-    if (!selectedCategory) return transactions;
-    return transactions.filter(t => t.category === selectedCategory);
+    let filtered = [...transactions];
+    // Sort by date descending (newest first)
+    filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+    if (!selectedCategory) return filtered;
+    return filtered.filter(t => t.category === selectedCategory);
   }, [transactions, selectedCategory]);
 
   const monthName = new Date().toLocaleString("en-US", { month: "long" });
@@ -123,6 +156,49 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
         </Card>
       </section>
 
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader
+            title="Net Worth History"
+            subtitle="Track your financial progress over time"
+            action={
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCreateSnapshot}
+                disabled={creatingSnapshot}
+                className="h-8"
+              >
+                {creatingSnapshot ? (
+                  <>
+                    <span className="animate-spin mr-2">⏳</span>
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Plus size={14} className="mr-1" />
+                    Create Snapshot
+                  </>
+                )}
+              </Button>
+            }
+          />
+          <CardBody>
+            <NetWorthChart snapshots={netWorthSnapshots} />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Expenses Over Time"
+            subtitle="Analyze your spending patterns"
+          />
+          <CardBody>
+            <ExpensesOverTimeChart transactions={transactions} />
+          </CardBody>
+        </Card>
+      </section>
+
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader
@@ -145,9 +221,9 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
                   />
                   <Stat
                     label="Bills Until Then"
-                    value={formatCurrency(forecast.upcomingRecurring + forecast.upcomingSubscriptions)}
+                    value={formatCurrency(forecast.upcomingRecurring)}
                     tone="negative"
-                    hint="Recurring + subscriptions"
+                    hint="Recurring bills and expenses"
                   />
                   <Stat
                     label="Cash Needed"
@@ -166,8 +242,8 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
                       </p>
                       <p className="mt-1 text-xs text-rose-200/80">
                         Consider withdrawing from your Emergency Fund or another
-                        asset account to cover statement balances, recurring expenses,
-                        and subscriptions on{" "}
+                        asset account to cover statement balances and recurring
+                        expenses on{" "}
                         {formatDate(forecast.nextDebtPaymentDate)}.
                       </p>
                     </div>
@@ -176,8 +252,8 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
                   <div className="flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-emerald-200">
                     <Wallet size={18} className="mt-0.5 shrink-0" />
                     <p className="text-sm">
-                      You have enough liquid cash to cover statement balances,
-                      recurring expenses, and subscriptions through {formatDate(forecast.nextDebtPaymentDate)}.
+                      You have enough liquid cash to cover statement balances
+                      and recurring expenses through {formatDate(forecast.nextDebtPaymentDate)}.
                     </p>
                   </div>
                 )}
@@ -401,7 +477,7 @@ export default function Dashboard({ profile, accounts, transactions, recurring, 
           accounts={assetAccounts}
           emptyHint="Track your 401k, IRA, or Emergency Fund."
         />
-        <UpcomingRecurringCard recurring={recurring} subscriptions={subscriptions} debtPaymentDate={forecast.nextDebtPaymentDate} />
+        <UpcomingRecurringCard recurring={recurring} debtPaymentDate={forecast.nextDebtPaymentDate} />
       </section>
     </div>
   );
@@ -485,33 +561,7 @@ function BalancesCard({ icon: Icon, title, accounts, emptyHint }) {
   );
 }
 
-function UpcomingRecurringCard({ recurring, subscriptions, debtPaymentDate }) {
-  // Calculate next renewal date for subscriptions
-  const calculateNextSubscriptionRenewal = (subscription) => {
-    if (!subscription.startDate) return null;
-    
-    const startDate = new Date(subscription.startDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    let monthsToAdd = 1;
-    if (subscription.interval === "quarterly") monthsToAdd = 3;
-    else if (subscription.interval === "biannually") monthsToAdd = 6;
-    else if (subscription.interval === "yearly") monthsToAdd = 12;
-    else if (subscription.interval === "custom") monthsToAdd = Number(subscription.customMonths) || 1;
-    
-    let baseDate = subscription.lastBillingDate 
-      ? new Date(subscription.lastBillingDate)
-      : new Date(startDate);
-    
-    let nextRenewal = new Date(baseDate);
-    while (nextRenewal < today) {
-      nextRenewal.setMonth(nextRenewal.getMonth() + monthsToAdd);
-    }
-    
-    return nextRenewal;
-  };
-
+function UpcomingRecurringCard({ recurring, debtPaymentDate }) {
   // Get next billing date for monthly recurring expenses
   const getNextRecurringDate = (dayOfMonth) => {
     const today = new Date();
@@ -526,43 +576,60 @@ function UpcomingRecurringCard({ recurring, subscriptions, debtPaymentDate }) {
 
   const combinedItems = useMemo(() => {
     const items = [];
-    
-    // Add monthly recurring expenses
+
+    // Add recurring expenses with proper normalization
     (recurring || []).forEach(r => {
+      const interval = r.interval || "monthly";
+      let monthlyAmount = Number(r.amount || 0);
+
+      // Normalize non-monthly recurring expenses to monthly equivalents
+      if (interval === "quarterly") monthlyAmount /= 3;
+      else if (interval === "biannually") monthlyAmount /= 6;
+      else if (interval === "yearly") monthlyAmount /= 12;
+      else if (interval === "custom") monthlyAmount /= (Number(r.customMonths) || 1);
+
+      // Calculate next date based on interval
+      let nextDate;
+      if (interval === "monthly") {
+        nextDate = getNextRecurringDate(r.billingDayOfMonth);
+      } else if (r.startDate) {
+        // Handle non-monthly intervals with start date
+        const startDate = new Date(r.startDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        let monthsToAdd = 1;
+        if (interval === "quarterly") monthsToAdd = 3;
+        else if (interval === "biannually") monthsToAdd = 6;
+        else if (interval === "yearly") monthsToAdd = 12;
+        else if (interval === "custom") monthsToAdd = Number(r.customMonths) || 1;
+
+        let baseDate = r.lastBillingDate
+          ? new Date(r.lastBillingDate)
+          : new Date(startDate);
+
+        nextDate = new Date(baseDate);
+        while (nextDate < today) {
+          nextDate.setMonth(nextDate.getMonth() + monthsToAdd);
+        }
+      }
+
       items.push({
         ...r,
         type: 'recurring',
-        nextDate: getNextRecurringDate(r.billingDayOfMonth),
+        nextDate,
         displayAmount: r.amount,
-        monthlyAmount: r.amount
-      });
-    });
-    
-    // Add subscriptions
-    (subscriptions || []).forEach(s => {
-      const nextRenewal = calculateNextSubscriptionRenewal(s);
-      let monthlyAmount = Number(s.amount || 0);
-      if (s.interval === "quarterly") monthlyAmount /= 3;
-      else if (s.interval === "biannually") monthlyAmount /= 6;
-      else if (s.interval === "yearly") monthlyAmount /= 12;
-      else if (s.interval === "custom") monthlyAmount /= (Number(s.customMonths) || 1);
-      
-      items.push({
-        ...s,
-        type: 'subscription',
-        nextDate: nextRenewal,
-        displayAmount: s.amount,
         monthlyAmount: monthlyAmount
       });
     });
-    
+
     // Sort by next date
     return items.sort((a, b) => {
       if (!a.nextDate) return 1;
       if (!b.nextDate) return -1;
       return a.nextDate - b.nextDate;
     });
-  }, [recurring, subscriptions]);
+  }, [recurring]);
 
   const totalMonthly = combinedItems.reduce((s, item) => s + (item.monthlyAmount || 0), 0);
 
@@ -582,7 +649,7 @@ function UpcomingRecurringCard({ recurring, subscriptions, debtPaymentDate }) {
           <Empty
             icon={CalendarClock}
             title="No recurring bills"
-            hint="Add fixed costs like rent, Wi-Fi, or subscriptions."
+            hint="Add fixed costs like rent, Wi-Fi, or other regular expenses."
           />
         ) : (
           <ul className="divide-y divide-neutral-900">
@@ -591,11 +658,11 @@ function UpcomingRecurringCard({ recurring, subscriptions, debtPaymentDate }) {
                 <div>
                   <p className="text-sm text-neutral-200">{item.name}</p>
                   <p className="text-[11px] text-neutral-500">
-                    {item.type === 'recurring' 
+                    {item.interval === "monthly"
                       ? `Bills on the ${ordinal(item.billingDayOfMonth)}`
-                      : item.nextDate 
+                      : item.nextDate
                         ? `Renews ${formatDate(item.nextDate)}`
-                        : 'No start date'
+                        : "No start date"
                     }
                   </p>
                 </div>
@@ -603,9 +670,9 @@ function UpcomingRecurringCard({ recurring, subscriptions, debtPaymentDate }) {
                   <span className="tabular text-sm text-neutral-300">
                     {formatCurrency(item.displayAmount)}
                   </span>
-                  {item.type === 'subscription' && item.interval !== 'monthly' && (
+                  {item.interval && item.interval !== "monthly" && (
                     <p className="text-[10px] text-neutral-500">
-                      {item.interval === 'custom' ? `Every ${item.customMonths}mo` : item.interval}
+                      {item.interval === "custom" ? `Every ${item.customMonths}mo` : item.interval}
                     </p>
                   )}
                 </div>

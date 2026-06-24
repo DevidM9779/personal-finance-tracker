@@ -6,6 +6,7 @@ import {
   PencilLine,
   Wallet,
   Repeat,
+  BarChart3,
   User,
   LogOut,
   CircleDollarSign,
@@ -16,6 +17,7 @@ const NAV_ITEMS = [
   { to: "/entry", label: "Weekly Entry", icon: PencilLine },
   { to: "/accounts", label: "Accounts", icon: Wallet },
   { to: "/recurring", label: "Recurring", icon: Repeat },
+  { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/profile", label: "Profile", icon: User },
 ];
 

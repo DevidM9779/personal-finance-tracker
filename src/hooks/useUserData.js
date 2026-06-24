@@ -34,16 +34,18 @@ function useCollectionSnapshot(q) {
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     if (!q) return;
+    console.log("[useCollectionSnapshot] Setting up listener for:", q?._query?.path?.canonicalString?.());
     const unsub = onSnapshot(
       q,
       (snap) => {
         const out = [];
         snap.forEach((d) => out.push({ id: d.id, ...d.data() }));
+        console.log("[useCollectionSnapshot] Fetched", out.length, "items from", q?._query?.path?.canonicalString?.());
         setItems(out);
         setLoading(false);
       },
       (err) => {
-        console.warn("collection snapshot error", err);
+        console.error("[useCollectionSnapshot] Error for", q?._query?.path?.canonicalString?.(), ":", err);
         setLoading(false);
       }
     );
@@ -56,10 +58,15 @@ function useCollectionSnapshot(q) {
 export function useUserData(uid) {
   const profile = useDocSnapshot(uid ? userDoc(uid) : null);
   const accounts = useCollectionSnapshot(uid ? accountsCol(uid) : null);
-  const transactions = useCollectionSnapshot(
-    uid ? query(transactionsCol(uid), orderBy("date", "desc")) : null
-  );
+  // Try without ordering first to see if that's the issue
+  const transactions = useCollectionSnapshot(uid ? transactionsCol(uid) : null);
   const recurring = useCollectionSnapshot(uid ? recurringCol(uid) : null);
+
+  console.log("[useUserData] Fetched transactions:", transactions.items.length, "items");
+  if (transactions.items.length > 0) {
+    console.log("[useUserData] Date range:", transactions.items[0].date, "to", transactions.items[transactions.items.length - 1].date);
+    console.log("[useUserData] First 3 transactions:", transactions.items.slice(0, 3).map(t => ({ id: t.id, date: t.date, amount: t.amount, type: t.type })));
+  }
 
   return {
     profile: profile.data,

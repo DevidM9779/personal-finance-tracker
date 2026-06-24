@@ -68,11 +68,19 @@ export async function createTransaction(uid, data) {
   return addDoc(transactionsCol(uid), {
     ...data,
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 }
 
 export async function deleteTransaction(uid, txId) {
   await deleteDoc(doc(db, "users", uid, "transactions", txId));
+}
+
+export async function updateTransaction(uid, txId, patch) {
+  await updateDoc(doc(db, "users", uid, "transactions", txId), {
+    ...patch,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function createRecurring(uid, data) {

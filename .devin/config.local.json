@@ -3,7 +3,10 @@
     "allow": [
       "Exec(npm create)",
       "Exec(npm install)",
-      "Exec(npm run)"
+      "Exec(npm run)",
+      "Exec(diff)",
+      "Exec(git status)",
+      "Exec(git log)"
     ]
   }
 }

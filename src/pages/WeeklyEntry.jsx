@@ -22,6 +22,7 @@ import { useToast, useToastedAction } from "../components/toastHooks";
 import {
   createTransaction,
   deleteTransaction,
+  updateTransaction,
   updateAccount,
 } from "../lib/firestoreData";
 
@@ -44,6 +45,10 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [timeFilter, setTimeFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [editForm, setEditForm] = useState({});
 
   const bankAndCreditAccounts = useMemo(
     () =>
@@ -64,20 +69,33 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
 
   const filteredTransactions = useMemo(() => {
     let filtered = [...transactions];
-    
+
+    // Sort by date descending (newest first)
+    filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+
     // Apply category filter
     if (categoryFilter !== "all") {
       filtered = filtered.filter(t => t.category === categoryFilter);
     }
-    
+
     // Apply type filter
     if (typeFilter !== "all") {
       filtered = filtered.filter(t => t.type === typeFilter);
     }
-    
+
     // Apply time filter
     const now = new Date();
-    if (timeFilter !== "all") {
+    if (customStartDate && customEndDate) {
+      // Use custom date range
+      const start = new Date(customStartDate);
+      const end = new Date(customEndDate);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(t => {
+        const transactionDate = new Date(t.date);
+        return transactionDate >= start && transactionDate <= end;
+      });
+    } else if (timeFilter !== "all") {
       const startDate = new Date();
       if (timeFilter === "week") {
         startDate.setDate(now.getDate() - 7);
@@ -91,9 +109,9 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
       startDate.setHours(0, 0, 0, 0);
       filtered = filtered.filter(t => new Date(t.date) >= startDate);
     }
-    
+
     return filtered;
-  }, [transactions, categoryFilter, timeFilter, typeFilter]);
+  }, [transactions, categoryFilter, timeFilter, typeFilter, customStartDate, customEndDate]);
 
   function updateRow(key, patch) {
     setRows((prev) =>
@@ -115,6 +133,56 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
 
   function removeRow(key) {
     setRows((prev) => (prev.length === 1 ? [EMPTY_ROW()] : prev.filter((r) => r.key !== key)));
+  }
+
+  function startEdit(transaction) {
+    setEditingTransaction(transaction);
+    setEditForm({
+      date: transaction.date,
+      amount: transaction.amount,
+      type: transaction.type,
+      category: transaction.category || '',
+      subCategory: transaction.subCategory || '',
+      accountId: transaction.accountId || '',
+      note: transaction.note || '',
+    });
+  }
+
+  function cancelEdit() {
+    setEditingTransaction(null);
+    setEditForm({});
+  }
+
+  async function handleEditSubmit(e) {
+    e.preventDefault();
+    if (!user || !editingTransaction) return;
+
+    setSubmitting(true);
+    try {
+      await updateTransaction(user.uid, editingTransaction.id, {
+        date: editForm.date,
+        amount: Number(editForm.amount),
+        type: editForm.type,
+        category: editForm.type === 'expense' ? editForm.category : null,
+        subCategory: editForm.type === 'expense' ? editForm.subCategory || null : null,
+        accountId: editForm.accountId || null,
+        note: editForm.note || null,
+      });
+      toast({
+        title: "Transaction updated",
+        variant: "success",
+      });
+      cancelEdit();
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Could not update transaction",
+        description: err?.message,
+        variant: "error",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function handleSubmit(e) {
@@ -257,7 +325,7 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
       <Card>
         <CardHeader
           title="Recent entries"
-          subtitle={`${filteredTransactions.length} shown${categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all" ? ` (filtered from ${transactions.length} total)` : ""}`}
+          subtitle={`${filteredTransactions.length} shown${categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all" || customStartDate || customEndDate ? ` (filtered from ${transactions.length} total)` : ""}`}
         />
         <CardBody>
           <div className="mb-4 flex flex-wrap gap-2">
@@ -301,9 +369,27 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
                 <option value="month">Last month</option>
                 <option value="quarter">Last 3 months</option>
                 <option value="year">Last year</option>
+                <option value="custom">Custom range</option>
               </select>
             </div>
-            {(categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all") && (
+            {timeFilter === "custom" && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 focus:border-emerald-500 focus:outline-none"
+                />
+                <span className="text-neutral-500 text-xs">to</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+            )}
+            {(categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all" || customStartDate || customEndDate) && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -311,6 +397,8 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
                   setCategoryFilter("all");
                   setTimeFilter("all");
                   setTypeFilter("all");
+                  setCustomStartDate("");
+                  setCustomEndDate("");
                 }}
                 className="h-7 text-xs"
               >
@@ -322,13 +410,13 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
           {filteredTransactions.length === 0 ? (
             <Empty
               icon={PencilLine}
-              title={categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all" ? "No matching entries" : "Nothing logged yet"}
-              hint={categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all" ? "Try adjusting your filters." : "Save your first transaction above."}
+              title={categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all" || customStartDate || customEndDate ? "No matching entries" : "Nothing logged yet"}
+              hint={categoryFilter !== "all" || timeFilter !== "all" || typeFilter !== "all" || customStartDate || customEndDate ? "Try adjusting your filters." : "Save your first transaction above."}
             />
           ) : (
             <div className="max-h-96 overflow-y-auto">
               <ul className="divide-y divide-neutral-900">
-                {filteredTransactions.slice(0, 50).map((t) => (
+                {filteredTransactions.map((t) => (
                   <li
                     key={t.id}
                     className="flex items-center justify-between gap-3 py-3"
@@ -358,18 +446,27 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
                         {t.type === "expense" ? "−" : "+"}
                         {formatCurrency(t.amount)}
                       </span>
-                      <button
-                        className="rounded-md p-1.5 text-neutral-500 transition hover:bg-neutral-900 hover:text-rose-300"
-                        onClick={() =>
-                          run(() => deleteTransaction(user.uid, t.id), {
-                            successMessage: "Transaction removed",
-                            errorMessage: "Could not delete",
+                      <div className="flex items-center gap-1">
+                        <button
+                          className="rounded-md p-1.5 text-neutral-500 transition hover:bg-neutral-900 hover:text-emerald-300"
+                          onClick={() => startEdit(t)}
+                          title="Edit transaction"
+                        >
+                          <PencilLine size={14} />
+                        </button>
+                        <button
+                          className="rounded-md p-1.5 text-neutral-500 transition hover:bg-neutral-900 hover:text-rose-300"
+                          onClick={() =>
+                            run(() => deleteTransaction(user.uid, t.id), {
+                              successMessage: "Transaction removed",
+                              errorMessage: "Could not delete",
                           })
                         }
                         aria-label="Delete transaction"
                       >
                         <Trash2 size={14} />
                       </button>
+                      </div>
                     </div>
                   </li>
                 ))}
@@ -378,6 +475,114 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
           )}
         </CardBody>
       </Card>
+
+      {/* Edit Transaction Modal */}
+      {editingTransaction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader title="Edit Transaction" />
+            <CardBody>
+              <form onSubmit={handleEditSubmit} className="space-y-4">
+                <Field label="Date">
+                  <Input
+                    type="date"
+                    value={editForm.date}
+                    onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                    required
+                  />
+                </Field>
+                <Field label="Type">
+                  <Select
+                    value={editForm.type}
+                    onChange={(e) => setEditForm({ ...editForm, type: e.target.value, category: '', subCategory: '' })}
+                    required
+                  >
+                    {TRANSACTION_TYPES.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Amount">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editForm.amount}
+                    onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
+                    required
+                  />
+                </Field>
+                {editForm.type === 'expense' && (
+                  <>
+                    <Field label="Category">
+                      <Select
+                        value={editForm.category}
+                        onChange={(e) => setEditForm({ ...editForm, category: e.target.value, subCategory: '' })}
+                        required
+                      >
+                        {EXPENSE_CATEGORIES.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    {editForm.category && EXPENSE_CATEGORY_MAP[editForm.category]?.subTags?.length > 0 && (
+                      <Field label="Sub-category">
+                        <Select
+                          value={editForm.subCategory}
+                          onChange={(e) => setEditForm({ ...editForm, subCategory: e.target.value })}
+                        >
+                          <option value="">None</option>
+                          {EXPENSE_CATEGORY_MAP[editForm.category].subTags.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                    )}
+                  </>                
+                )}
+                <Field label="Account">
+                  <Select
+                    value={editForm.accountId}
+                    onChange={(e) => setEditForm({ ...editForm, accountId: e.target.value })}
+                  >
+                    <option value="">None</option>
+                    {bankAndCreditAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Note">
+                  <Input
+                    value={editForm.note}
+                    onChange={(e) => setEditForm({ ...editForm, note: e.target.value })}
+                  />
+                </Field>
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={cancelEdit}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={submitting}>
+                    {submitting ? <Loader2 size={14} className="animate-spin" /> : "Save"}
+                  </Button>
+                </div>
+              </form>
+            </CardBody>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Loader2, Save, User } from "lucide-react";
+import { Loader2, Save, User, Plus, X } from "lucide-react";
 import {
   Button,
   Card,
@@ -11,17 +11,20 @@ import {
 import { formatCurrency, ordinal } from "../lib/format";
 import { useToast } from "../components/toastHooks";
 import { updateProfile } from "../lib/firestoreData";
+import { EXPENSE_CATEGORIES, categoryLabel } from "../lib/categories";
 
 export default function Profile({ user, profile }) {
   const { toast } = useToast();
   const profileKey = useMemo(
-    () => `${profile?.id || ""}:${profile?.expectedMonthlyIncome ?? ""}:${profile?.preferredDebtPaymentDayOfMonth ?? ""}`,
+    () => `${profile?.id || ""}:${profile?.expectedMonthlyIncome ?? ""}:${profile?.preferredDebtPaymentDayOfMonth ?? ""}:${profile?.impulseThreshold ?? ""}:${JSON.stringify(profile?.impulseCategories ?? [])}`,
     [profile]
   );
   const [formState, setFormState] = useState(() => ({
     key: profileKey,
     expectedMonthlyIncome: profile?.expectedMonthlyIncome ?? 0,
     preferredDebtPaymentDayOfMonth: profile?.preferredDebtPaymentDayOfMonth ?? 1,
+    impulseThreshold: profile?.impulseThreshold ?? 200,
+    impulseCategories: profile?.impulseCategories ?? ["misc", "restaurants_dates"],
   }));
 
   // When the underlying profile snapshot changes, sync derived state without
@@ -31,15 +34,29 @@ export default function Profile({ user, profile }) {
       key: profileKey,
       expectedMonthlyIncome: profile?.expectedMonthlyIncome ?? 0,
       preferredDebtPaymentDayOfMonth: profile?.preferredDebtPaymentDayOfMonth ?? 1,
+      impulseThreshold: profile?.impulseThreshold ?? 200,
+      impulseCategories: profile?.impulseCategories ?? ["misc", "restaurants_dates"],
     });
   }
 
   const expectedMonthlyIncome = formState.expectedMonthlyIncome;
   const preferredDebtPaymentDayOfMonth = formState.preferredDebtPaymentDayOfMonth;
+  const impulseThreshold = formState.impulseThreshold;
+  const impulseCategories = formState.impulseCategories;
   const setExpectedMonthlyIncome = (v) =>
     setFormState((s) => ({ ...s, expectedMonthlyIncome: v }));
   const setPreferredDebtPaymentDayOfMonth = (v) =>
     setFormState((s) => ({ ...s, preferredDebtPaymentDayOfMonth: v }));
+  const setImpulseThreshold = (v) =>
+    setFormState((s) => ({ ...s, impulseThreshold: v }));
+  const toggleImpulseCategory = (categoryId) => {
+    setFormState((s) => ({
+      ...s,
+      impulseCategories: s.impulseCategories.includes(categoryId)
+        ? s.impulseCategories.filter((c) => c !== categoryId)
+        : [...s.impulseCategories, categoryId],
+    }));
+  };
   const [saving, setSaving] = useState(false);
 
   async function onSubmit(e) {
@@ -52,6 +69,8 @@ export default function Profile({ user, profile }) {
         preferredDebtPaymentDayOfMonth: clampDay(
           preferredDebtPaymentDayOfMonth
         ),
+        impulseThreshold: Number(impulseThreshold) || 200,
+        impulseCategories: impulseCategories,
       });
       toast({ title: "Profile saved", variant: "success" });
     } catch (err) {
@@ -126,6 +145,61 @@ export default function Profile({ user, profile }) {
                   <Save size={14} />
                 )}
                 Save profile
+              </Button>
+            </div>
+          </form>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="Impulse Spending Tracking" />
+        <CardBody>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <Field
+              label="Monthly impulse threshold"
+              hint={`Maximum monthly spending for impulse categories (currently ${formatCurrency(profile?.impulseThreshold || 200)})`}
+            >
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={impulseThreshold}
+                onChange={(e) => setImpulseThreshold(e.target.value)}
+              />
+            </Field>
+            <div>
+              <label className="block text-sm font-medium text-neutral-300 mb-2">
+                Impulse categories
+              </label>
+              <p className="text-xs text-neutral-500 mb-3">
+                Select categories to track as impulse spending
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {EXPENSE_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => toggleImpulseCategory(cat.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition ${
+                      impulseCategories.includes(cat.id)
+                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-300"
+                        : "border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-700"
+                    }`}
+                  >
+                    {impulseCategories.includes(cat.id) && <Plus size={12} />}
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={saving}>
+                {saving ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Save size={14} />
+                )}
+                Save settings
               </Button>
             </div>
           </form>

@@ -11,10 +11,59 @@ service cloud.firestore {
     // financial data underneath their user document. This is a single-user
     // application: each authenticated user only ever sees their own data.
     match /users/{userId} {
+      // User must be authenticated and can only access their own data
       allow read, write: if request.auth != null && request.auth.uid == userId;
 
-      match /{subPath=**} {
+      // Profile document specific rules
+      match /profile {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.keys().hasAll(['email', 'createdAt']);
+        allow update: if request.auth != null && request.auth.uid == userId
+          // Prevent modifying createdAt and email
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt', 'email']);
+      }
+
+      // Accounts collection
+      match /accounts/{accountId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
+        // Validate account structure on create
+        allow create: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.keys().hasAll(['name', 'type', 'balance'])
+          && request.resource.data.type in ['bank', 'creditCard', 'asset'];
+      }
+
+      // Transactions collection
+      match /transactions/{transactionId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        // Validate transaction structure on create
+        allow create: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.keys().hasAll(['type', 'amount', 'date'])
+          && request.resource.data.type in ['income', 'expense', 'assetContribution']
+          && request.resource.data.amount >= 0;
+      }
+
+      // Recurring expenses collection
+      match /recurringExpenses/{recurringId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        // Validate recurring expense structure on create
+        allow create: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.keys().hasAll(['name', 'amount', 'billingDayOfMonth'])
+          && request.resource.data.amount >= 0
+          && request.resource.data.billingDayOfMonth >= 1
+          && request.resource.data.billingDayOfMonth <= 31;
+      }
+
+      // Net worth snapshots collection
+      match /netWorthSnapshots/{snapshotId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        // Validate snapshot structure on create
+        allow create: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.keys().hasAll(['year', 'month', 'netWorth'])
+          && request.resource.data.year >= 2000
+          && request.resource.data.year <= 2100
+          && request.resource.data.month >= 1
+          && request.resource.data.month <= 12;
       }
     }
   }

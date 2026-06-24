@@ -1,0 +1,5 @@
+TAB: "Weekly Entry"
+LOGS: ""
+
+TAB: "Dashboard"
+LOGS: ""

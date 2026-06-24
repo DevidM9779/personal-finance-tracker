@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import WeeklyEntry from "./pages/WeeklyEntry";
 import Accounts from "./pages/Accounts";
 import Recurring from "./pages/Recurring";
+import Analytics from "./pages/Analytics";
 import Profile from "./pages/Profile";
 import { useAuth } from "./hooks/useAuth";
 import { useUserData } from "./hooks/useUserData";
@@ -35,7 +36,7 @@ function Root() {
 }
 
 function AuthenticatedApp({ user }) {
-  const { profile, accounts, transactions, recurring, subscriptions, loading } = useUserData(
+  const { profile, accounts, transactions, recurring, loading } = useUserData(
     user.uid
   );
 
@@ -52,6 +53,7 @@ function AuthenticatedApp({ user }) {
                 path="/"
                 element={
                   <Dashboard
+                    user={user}
                     profile={profile}
                     accounts={accounts}
                     transactions={transactions}
@@ -76,6 +78,10 @@ function AuthenticatedApp({ user }) {
               <Route
                 path="/recurring"
                 element={<Recurring user={user} recurring={recurring} />}
+              />
+              <Route
+                path="/analytics"
+                element={<Analytics user={user} profile={profile} accounts={accounts} transactions={transactions} />}
               />
               <Route
                 path="/profile"
