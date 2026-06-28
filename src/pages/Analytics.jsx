@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Card, CardBody, CardHeader } from "../components/ui";
 import CategoryComparisonChart from "../components/CategoryComparisonChart";
 import CashFlowSankey from "../components/CashFlowSankey";
-import TopMomIncreases from "../components/TopMomIncreases";
-import ImpulseTrackerCard from "../components/ImpulseTrackerCard";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { formatCurrency, getTodayEST } from "../lib/format";
+import { EXPENSE_CATEGORIES } from "../lib/categories";
 
 export default function Analytics({ user, profile, accounts, transactions }) {
   const [comparisonMode, setComparisonMode] = useState("mom"); // "mom" or "yoy"
@@ -34,6 +34,46 @@ export default function Analytics({ user, profile, accounts, transactions }) {
     nextMonth.setMonth(nextMonth.getMonth() + 1);
     return nextMonth <= new Date();
   };
+
+  const getStartOfWeek = (dateString) => {
+    const d = new Date(`${dateString}T00:00:00`); // Anchor to local midnight
+    const day = d.getDay() || 7; 
+    d.setDate(d.getDate() - (day - 1)); // Safe date math
+    return d.toLocaleDateString("en-CA"); // Strictly returns "YYYY-MM-DD"
+  };
+
+  const [selectedWeekStart, setSelectedWeekStart] = useState(() => getStartOfWeek(getTodayEST()));
+
+  const goToPreviousWeek = () => {
+    const d = new Date(`${selectedWeekStart}T00:00:00`);
+    d.setDate(d.getDate() - 7);
+    setSelectedWeekStart(d.toLocaleDateString("en-CA"));
+  };
+
+  const goToNextWeek = () => {
+    const d = new Date(`${selectedWeekStart}T00:00:00`);
+    d.setDate(d.getDate() + 7);
+    setSelectedWeekStart(d.toLocaleDateString("en-CA"));
+  };
+
+  const canGoNextWeek = () => {
+    const nextWeek = new Date(`${selectedWeekStart}T00:00:00`);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    const currentWeekStart = new Date(`${getStartOfWeek(getTodayEST())}T00:00:00`);
+    return nextWeek <= currentWeekStart;
+  };
+
+  const selectedWeekEnd = new Date(`${selectedWeekStart}T00:00:00`);
+  selectedWeekEnd.setDate(selectedWeekEnd.getDate() + 6);
+  const selectedWeekEndStr = selectedWeekEnd.toLocaleDateString("en-CA");
+
+  const weekLabel = `${new Date(`${selectedWeekStart}T00:00:00`).toLocaleDateString('en-US', {month: 'short', day: 'numeric'})} - ${selectedWeekEnd.toLocaleDateString('en-US', {month: 'short', day: 'numeric'})}`;
+
+  const thisWeeksExpenses = transactions.filter(
+    (t) => t.type === "expense" && t.date >= selectedWeekStart && t.date <= selectedWeekEndStr
+  );
+
+  
 
   return (
     <div className="space-y-8">
@@ -88,20 +128,6 @@ export default function Analytics({ user, profile, accounts, transactions }) {
       {/* Spending Leak Analytics */}
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card>
-          <CardHeader title="Impulse Spending Tracker" />
-          <CardBody>
-            <ImpulseTrackerCard transactions={transactions} profile={profile} />
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader title="Top Spending Increases" />
-          <CardBody>
-            <TopMomIncreases transactions={transactions} />
-          </CardBody>
-        </Card>
-
-        <Card>
           <CardHeader title="Quick Stats" />
           <CardBody>
             <div className="space-y-4">
@@ -133,6 +159,78 @@ export default function Analytics({ user, profile, accounts, transactions }) {
                     .toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                 </p>
               </div>
+            </div>
+          </CardBody>
+        </Card>
+      </section>
+
+      {/* Weekly Budgeting Visualizer */}
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card className="lg:col-span-2">
+          <CardHeader 
+            title="Weekly Budget Tracker" 
+            action={
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={goToPreviousWeek}
+                  className="rounded-md bg-neutral-900 p-2 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+                  title="Previous week"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-sm font-medium text-neutral-200 min-w-[120px] text-center">
+                  {weekLabel}
+                </span>
+                <button
+                  onClick={goToNextWeek}
+                  disabled={!canGoNextWeek()}
+                  className="rounded-md bg-neutral-900 p-2 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors disabled:opacity-30 disabled:hover:bg-neutral-900 disabled:hover:text-neutral-400"
+                  title="Next week"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            }
+          />
+          <CardBody>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {EXPENSE_CATEGORIES.map((cat) => {
+                const budget = Number(profile?.weeklyBudgets?.[cat.id]) || 0;
+                
+                const spent = thisWeeksExpenses
+                  .filter((t) => t.category === cat.id)
+                  .reduce((sum, t) => sum + Number(t.amount), 0);
+                
+                // ONLY hide this block if no budget is set AND no money was spent. 
+                if (budget === 0 && spent === 0) return null; 
+
+                const remaining = budget - spent;
+                const isOver = budget > 0 && remaining < 0;
+                const noBudgetSet = budget === 0;
+                // Prevent division by zero if budget isn't set yet
+                const percent = budget > 0 ? Math.min((spent / budget) * 100, 100) : 100;
+
+                return (
+                  <div key={cat.id} className="rounded-xl border border-neutral-800 bg-neutral-950/40 p-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium text-neutral-200">{cat.label}</span>
+                      <span className={`text-xs font-bold ${noBudgetSet ? 'text-neutral-400' : (isOver ? 'text-rose-400' : 'text-emerald-400')}`}>
+                        {noBudgetSet ? 'No limit set' : (isOver ? 'Over budget' : `${formatCurrency(remaining)} left`)}
+                      </span>
+                    </div>
+                    <div className="h-2 w-full bg-neutral-900 rounded-full overflow-hidden mb-2">
+                      <div 
+                        className={`h-full ${noBudgetSet ? 'bg-neutral-600' : (isOver ? 'bg-rose-500' : 'bg-emerald-500')}`} 
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[11px] text-neutral-500">
+                      <span>{formatCurrency(spent)} spent</span>
+                      <span>{noBudgetSet ? '—' : `${formatCurrency(budget)} limit`}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </CardBody>
         </Card>

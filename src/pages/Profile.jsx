@@ -25,6 +25,7 @@ export default function Profile({ user, profile }) {
     preferredDebtPaymentDayOfMonth: profile?.preferredDebtPaymentDayOfMonth ?? 1,
     impulseThreshold: profile?.impulseThreshold ?? 200,
     impulseCategories: profile?.impulseCategories ?? ["misc", "restaurants_dates"],
+    weeklyBudgets: profile?.weeklyBudgets ?? {},
   }));
 
   // When the underlying profile snapshot changes, sync derived state without
@@ -58,6 +59,12 @@ export default function Profile({ user, profile }) {
     }));
   };
   const [saving, setSaving] = useState(false);
+  const updateWeeklyBudget = (categoryId, amount) => {
+  setFormState((s) => ({
+    ...s,
+    weeklyBudgets: { ...s.weeklyBudgets, [categoryId]: amount },
+  }));
+};
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -71,6 +78,7 @@ export default function Profile({ user, profile }) {
         ),
         impulseThreshold: Number(impulseThreshold) || 200,
         impulseCategories: impulseCategories,
+        weeklyBudgets: formState.weeklyBudgets,
       });
       toast({ title: "Profile saved", variant: "success" });
     } catch (err) {
@@ -200,6 +208,32 @@ export default function Profile({ user, profile }) {
                   <Save size={14} />
                 )}
                 Save settings
+              </Button>
+            </div>
+          </form>
+        </CardBody>
+      </Card>
+      
+      <Card>
+        <CardHeader title="Weekly Category Budgets" />
+        <CardBody>
+          <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {EXPENSE_CATEGORIES.map((cat) => (
+              <Field key={cat.id} label={`${cat.label} Budget`}>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formState.weeklyBudgets[cat.id] || ""}
+                  onChange={(e) => updateWeeklyBudget(cat.id, e.target.value)}
+                  placeholder="0.00"
+                />
+              </Field>
+            ))}
+            <div className="md:col-span-2 flex justify-end mt-4">
+              <Button type="submit" disabled={saving}>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Save budgets
               </Button>
             </div>
           </form>

@@ -43,6 +43,7 @@ export const TRANSACTION_TYPES = [
 
 export const ACCOUNT_TYPES = [
   { id: "bank", label: "Bank · Checking / Savings" },
+  { id: "cash", label: "Cash · Physical Currency" },
   { id: "asset", label: "Asset · 401k, IRA, Roth, Investments" },
   { id: "creditCard", label: "Credit Card" },
 ];

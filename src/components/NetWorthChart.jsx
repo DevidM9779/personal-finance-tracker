@@ -12,19 +12,30 @@ import { formatCurrency } from "../lib/format";
 
 export default function NetWorthChart({ snapshots }) {
   const chartData = useMemo(() => {
-    return snapshots
-      .map((snap) => ({
-        date: `${snap.month}/${snap.year}`,
-        netWorth: Number(snap.netWorth || 0),
-        liquidCash: Number(snap.liquidCash || 0),
-        assets: Number(snap.assets || 0),
-        debt: Number(snap.creditDebt || 0),
-      }))
-      .sort((a, b) => {
-        const [aMonth, aYear] = a.date.split('/').map(Number);
-        const [bMonth, bYear] = b.date.split('/').map(Number);
-        return aYear !== bYear ? aYear - bYear : aMonth - bMonth;
-      });
+    // 1. Sort the raw snapshots FIRST before mapping so we can use exact timestamps
+    const sortedSnapshots = [...snapshots].sort((a, b) => {
+      const getTime = (snap) => {
+        // Handle native Firestore Timestamps
+        if (snap.createdAt?.toDate) return snap.createdAt.toDate().getTime();
+        // Handle standard ISO date strings if present
+        if (snap.createdAt) return new Date(snap.createdAt).getTime();
+        if (snap.date) return new Date(snap.date).getTime();
+        // Fallback to month/year if no exact timestamp exists
+        return new Date(snap.year, snap.month - 1).getTime();
+      };
+
+      // Sort ascending (oldest to newest for the chart)
+      return getTime(a) - getTime(b);
+    });
+
+    // 2. Map the correctly sorted data into the simplified format Recharts expects
+    return sortedSnapshots.map((snap) => ({
+      date: `${snap.month}/${snap.year}`, // Keeps the clean label for the X-Axis
+      netWorth: Number(snap.netWorth || 0),
+      liquidCash: Number(snap.liquidCash || 0),
+      assets: Number(snap.assets || 0),
+      debt: Number(snap.creditDebt || 0),
+    }));
   }, [snapshots]);
 
   if (chartData.length === 0) {

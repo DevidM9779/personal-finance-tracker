@@ -56,6 +56,7 @@ export default function WeeklyEntry({ user, accounts, transactions }) {
         (a) =>
           a.isActive !== false &&
           (a.type === "bank" ||
+            a.type === "cash" ||
             a.type === "creditCard" ||
             a.type === "asset")
       ),

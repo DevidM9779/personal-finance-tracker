@@ -31,16 +31,18 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 export function formatDate(value) {
-  if (!value) return "—";
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return dateFormatter.format(d);
+  // if (!value) return "—";
+  // const d = value instanceof Date ? value : new Date(value);
+  // if (Number.isNaN(d.getTime())) return "—";
+  // return dateFormatter.format(d);
+  return formatDateEST(value);
 }
 
 export function todayIsoDate() {
-  const d = new Date();
-  const tz = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+  // const d = new Date();
+  // const tz = d.getTimezoneOffset() * 60000;
+  // return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+  return getTodayEST();
 }
 
 export function ordinal(n) {
